@@ -57,7 +57,7 @@ namespace SecureContainProtect
 
         public bool UseItem()
         {
-            if (!gc.tileInfo.IsIndoors(Owner.tr.position))
+            if (!gc.tileInfo.IsIndoors(Owner!.tr.position))
             {
                 Owner.SayDialogue("CantAttack");
                 if (Owner.isPlayer != 0 && Owner.localPlayer)
