@@ -47,7 +47,7 @@ namespace SecureContainProtect
         public bool UseItem()
         {
             int heal = new ItemFunctions().DetermineHealthChange(Item, Owner);
-            Owner.statusEffects.ChangeHealth(heal);
+            Owner!.statusEffects.ChangeHealth(heal);
 
             if (Owner.HasTrait(VanillaTraits.ShareTheHealth) || Owner.HasTrait(VanillaTraits.ShareTheHealth2))
                 new ItemFunctions().GiveFollowersHealth(Owner, heal);
@@ -76,83 +76,82 @@ namespace SecureContainProtect
         {
             if (type.StartsWith("Joke_", StringComparison.Ordinal))
             {
-                if (__instance.GetHook<SCP_504_ConsumedTomato>() is not null && DeterminePower() > Power.None)
-                {
-                    __instance.deathKiller =  __instance.deathMethod = __instance.deathMethodItem
-                        = gc.nameDB.GetName(nameof(SCP_504), NameTypes.Item);
-                    __instance.ChangeHealth(-200f);
+                Vector2 target = __instance.tr.position;
+
+                SCP_504_ConsumedTomato? consumedTomato = __instance.GetHook<SCP_504_ConsumedTomato>();
+                if (consumedTomato is not null)
+                { // explode the consumed tomato
+                    Power power = DeterminePower();
+                    if (power > Power.Twitch)
+                    {
+                        __instance.RemoveHook(consumedTomato);
+                        __instance.deathKiller =  __instance.deathMethod = __instance.deathMethodItem = nameof(SCP_504);
+                        __instance.ChangeHealth(-200f);
+                        HitTomato(target, power, __instance);
+                    }
                 }
 
-                Vector2 target = __instance.curPosition;
+                const float distanceThreshold = 16 * 0.64f;
+                const float thresholdSqr = distanceThreshold * distanceThreshold;
 
                 foreach (Item item in gc.itemList.FindAll(static i => i.invItem?.invItemName is nameof(SCP_504)))
                 {
-                    TriggerTomato(item, target, DeterminePower());
+                    if (((Vector2)item.tr.position - target).sqrMagnitude > thresholdSqr) return;
+
+                    Power power = DeterminePower();
+                    if (power > Power.None)
+                        TriggerTomatoOnGround(item, target, power);
                 }
 
                 foreach (Agent agent in gc.agentList)
                 {
-                    if (Vector2.Distance(agent.tr.position, target) > 16 * 0.64f) return;
+                    if (((Vector2)agent.tr.position - target).sqrMagnitude > thresholdSqr) return;
+
                     if (agent.isPlayer is 0)
-                    {
+                    { // just check their inventory, since they don't have many items
                         InvItem? tomato = agent.inventory.FindItem(nameof(SCP_504));
-                        if (tomato is not null) TriggerTomato(tomato, target, DeterminePower());
+                        Power power = DeterminePower();
+                        if (tomato is not null && power > Power.None)
+                            TriggerTomatoFromInventory(tomato, target, power, __instance);
                     }
                     else
-                    {
+                    { // check just the toolbar, to allow the player to somehow keep their tomatoes under control
                         InvSlot? slot = agent.mainGUI?.AllSlots.Find(static s => s.slotType is "Toolbar" && s.item?.invItemName is nameof(SCP_504));
-                        if (slot is not null) TriggerTomato(slot.item, target, DeterminePower());
+                        Power power = DeterminePower();
+                        if (slot is not null && power > Power.None)
+                            TriggerTomatoFromInventory(slot.item, target, DeterminePower(), __instance);
                     }
                 }
 
             }
         }
 
-        public enum Power { None, Twitch, Hurl, Launch, Blast }
+        public static void Item_OnCollisionEnter2D(Item __instance) => HitTomato(__instance);
+
+        public enum Power { None, Twitch, Hurl, Launch, Blast, Triggered }
 
         private static readonly Random rnd = new Random();
         public static Power DeterminePower() => rnd.Next(1000) switch
         {
-            < 5 => Power.Blast,    //  0.5% - Huge explosion
-            < 50 => Power.Launch,  //  2.5% - Big explosion
-            < 100 => Power.Twitch, //  7.0% - small movement
-            < 400 => Power.None,   // 30.0% - nothing
-            _ => Power.Hurl,       // 60.0% - Normal explosion
+            < 1 => Power.Triggered, //  0.1% - Huge explosion
+            < 5 => Power.Blast,     //  0.4% - Big explosion
+            < 30 => Power.Launch,   //  2.5% - Normal explosion
+            < 100 => Power.Twitch,  //  7.0% - small movement
+            < 400 => Power.None,    // 30.0% - nothing
+            _ => Power.Hurl,        // 60.0% - powerful throw
+        };
+        private static int GetDamage(Power power) => power switch
+        {
+            Power.None => 0,
+            Power.Twitch => 1,
+            Power.Hurl => 20,
+            Power.Launch => 20,
+            Power.Blast => 50,
+            Power.Triggered => 200,
+            _ => throw new ArgumentException(nameof(power)),
         };
 
-        public static Item? TriggerTomato(Item item, Vector2 target, Power power)
-        {
-            if (power is Power.None) return null;
-
-            InvItem itemPart = new InvItem
-            {
-                invItemName = item.invItem.invItemName,
-                invItemCount = 1,
-            };
-            itemPart.SetupDetails(true);
-
-            Item tomato = gc.spawnerMain.SpawnItemWeapon(item.curPosition, itemPart, null, item.owner);
-            if (--item.invItem.invItemCount is 0) item.DestroyMe();
-            LaunchTomato(tomato, target, power);
-            return tomato;
-        }
-        public static Item? TriggerTomato(InvItem item, Vector2 target, Power power)
-        {
-            if (power is Power.None || item.database is null || item.agent is null) return null;
-
-            InvItem itemPart = new InvItem
-            {
-                invItemName = item.invItemName,
-                invItemCount = 1,
-            };
-            itemPart.SetupDetails(true);
-
-            Item tomato = gc.spawnerMain.SpawnItemWeapon(item.agent.curPosition, itemPart, null, item.agent);
-            item.database.SubtractFromItemCount(item, 1);
-            LaunchTomato(tomato, target, power);
-            return tomato;
-        }
-        private static void LaunchTomato(Item item, Vector2 target, Power power)
+        public static void ThrowTomato(Item item, Vector2 target, Power power)
         {
             item.thrower = item.owner;
             item.beingThrown = true;
@@ -164,26 +163,26 @@ namespace SecureContainProtect
             SCP_504_Tomato tomato = item.AddHook<SCP_504_Tomato>();
             tomato.Power = power;
 
-            int otherDamage = 0;
+            int otherDamage = GetDamage(power);
             Movement movement = item.GetComponent<Movement>();
             movement.RotateToPositionOffset(target);
             movement.RotateToPositionOffsetTr(target);
             switch (power)
             {
+                // TODO: play different sound clips
                 case Power.Twitch:
-                    otherDamage = 1;
-                    movement.Throw(2f); // TODO: play different sound clips
+                    movement.Throw(1f);
                     break;
                 case Power.Hurl:
-                    otherDamage = 20;
                     movement.Throw(16f);
                     break;
                 case Power.Launch:
-                    otherDamage = 40;
                     movement.Throw(24f);
                     break;
                 case Power.Blast:
-                    otherDamage = 100;
+                    movement.Throw(32f);
+                    break;
+                case Power.Triggered:
                     movement.Throw(32f);
                     break;
             }
@@ -194,31 +193,77 @@ namespace SecureContainProtect
                                       item.thrower.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(), true);
             Physics2D.IgnoreCollision(item.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(),
                                       item.thrower.tr.Find("AgentItemCollider").GetComponent<BoxCollider2D>().GetComponent<Collider2D>(), true);
-
         }
-
-        public static void Item_OnCollisionEnter2D(Item __instance)
+        public static void HitTomato(Item __instance)
         {
             SCP_504_Tomato? tomato = __instance.GetHook<SCP_504_Tomato>();
-            if (tomato is not null && tomato.Power >= Power.Hurl)
+            if (tomato is null) return;
+            if (__instance.rb.velocity.magnitude < 4f)
             {
-                if (__instance.rb.velocity.magnitude < 4f)
-                {
-                    ScpPlugin.Logger.LogWarning($"The tomato's too slow! {__instance.rb.velocity.magnitude:F3} u/s");
-                    return;
-                }
-                gc.spawnerMain.SpawnNoise(__instance.tr.position, 1f, null, null, __instance.thrower);
-                gc.audioHandler.Play(__instance, "ItemHitItem");
-
-                gc.spawnerMain.SpawnExplosion(__instance, __instance.tr.position, tomato.Power switch
-                {
-                    Power.Hurl => "Normal",
-                    Power.Launch => "Big",
-                    Power.Blast => "Huge",
-					_ => throw new InvalidOperationException($"Invalid tomato power: {tomato.Power}"),
-                });
-                __instance.DestroyMe();
+                ScpPlugin.Logger.LogWarning($"The tomato's too slow! {__instance.rb.velocity.magnitude:F3} u/s");
+                return;
             }
+            HitTomato(__instance.tr.position, tomato.Power, __instance.thrower);
+
+            if (tomato.Power >= Power.Hurl)
+                __instance.DestroyMe();
+        }
+        public static void HitTomato(Vector2 hit, Power power, Agent thrower)
+        {
+            gc.spawnerMain.SpawnNoise(hit, 1f, null, null, thrower);
+            gc.audioHandler.Play(thrower, "ItemHitItem");
+
+            if (power >= Power.Launch)
+            {
+                Explosion explosion = gc.spawnerMain.SpawnExplosion(thrower, hit, power switch
+                {
+                    Power.Launch => "Normal",
+                    Power.Blast => "Big",
+                    Power.Triggered => "Huge",
+                    _ => null,
+                });
+                ParticleSystem ps = explosion.particleEffect.ps;
+                ParticleSystem.MainModule main = ps.main;
+                main.startColor = new ParticleSystem.MinMaxGradient(new Color32(221, 48, 17, 255));
+            }
+        }
+
+        public static void TriggerTomatoFromInventory(InvItem item, Vector2 target, Power power, Agent targetAgent)
+        {
+            if (item.database is null || item.agent is null) return;
+
+            if (item.agent == targetAgent)
+            {
+                targetAgent.deathKiller =  targetAgent.deathMethod = targetAgent.deathMethodItem = nameof(SCP_504);
+                item.database.SubtractFromItemCount(item, 1);
+                targetAgent.statusEffects.ChangeHealth(-GetDamage(power));
+                HitTomato(target, power, targetAgent);
+                return;
+            }
+
+            InvItem itemPart = new InvItem
+            {
+                invItemName = item.invItemName,
+                invItemCount = 1,
+            };
+            itemPart.SetupDetails(true);
+
+            Item tomato = gc.spawnerMain.SpawnItemWeapon(item.agent.curPosition, itemPart, null, item.agent);
+            item.database.SubtractFromItemCount(item, 1);
+            ThrowTomato(tomato, target, power);
+        }
+        public static void TriggerTomatoOnGround(Item item, Vector2 target, Power power)
+        {
+            InvItem itemPart = new InvItem
+            {
+                invItemName = item.invItem.invItemName,
+                invItemCount = 1,
+            };
+            itemPart.SetupDetails(true);
+
+            Item tomato = gc.spawnerMain.SpawnItemWeapon(item.curPosition, itemPart, null, item.owner);
+            if (--item.invItem.invItemCount is 0) item.DestroyMe();
+            ThrowTomato(tomato, target, power);
         }
 
     }
@@ -234,7 +279,7 @@ namespace SecureContainProtect
 
         protected override void Initialize()
         {
-            timeUntilDigestion = 120f;
+            timeUntilDigestion = 60f;
             // TODO: traits affecting digestion
         }
 
