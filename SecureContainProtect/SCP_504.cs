@@ -1,4 +1,5 @@
 ﻿using System;
+using System.Collections;
 using RogueLibsCore;
 using UnityEngine;
 using UnityEngine.Networking;
@@ -33,10 +34,10 @@ namespace SecureContainProtect
         public override void SetupDetails()
         {
             Item.itemType = ItemTypes.Food;
-            Item.healthChange = 15;
-            Item.initCount = 3;
-            Item.rewardCount = 6;
-            Item.itemValue = 40;
+            Item.healthChange = 5;
+            Item.initCount = 6;
+            Item.rewardCount = 12;
+            Item.itemValue = 20;
             Item.stackable = true;
             Item.cantBeCloned = true;
             Item.notInLoadoutMachine = true;
@@ -78,6 +79,7 @@ namespace SecureContainProtect
             {
                 Vector2 target = __instance.tr.position;
 
+                bool ignoreSelf = false;
                 SCP_504_ConsumedTomato? consumedTomato = __instance.GetHook<SCP_504_ConsumedTomato>();
                 if (consumedTomato is not null)
                 { // explode the consumed tomato
@@ -88,6 +90,7 @@ namespace SecureContainProtect
                         __instance.deathKiller =  __instance.deathMethod = __instance.deathMethodItem = nameof(SCP_504);
                         __instance.ChangeHealth(-200f);
                         HitTomato(target, power, __instance);
+                        ignoreSelf = true;
                     }
                 }
 
@@ -96,33 +99,34 @@ namespace SecureContainProtect
 
                 foreach (Item item in gc.itemList.FindAll(static i => i.invItem?.invItemName is nameof(SCP_504)))
                 {
-                    if (((Vector2)item.tr.position - target).sqrMagnitude > thresholdSqr) return;
+                    if (((Vector2)item.tr.position - target).sqrMagnitude > thresholdSqr) continue;
 
                     Power power = DeterminePower();
                     if (power > Power.None)
                         TriggerTomatoOnGround(item, target, power);
                 }
 
-                foreach (Agent agent in gc.agentList)
+                foreach (Agent agent in gc.agentList.ToArray())
                 {
-                    if (((Vector2)agent.tr.position - target).sqrMagnitude > thresholdSqr) return;
+                    if (ignoreSelf && agent == __instance) continue;
+                    if (((Vector2)agent.tr.position - target).sqrMagnitude > thresholdSqr) continue;
 
                     if (agent.isPlayer is 0)
                     { // just check their inventory, since they don't have many items
-                        InvItem? tomato = agent.inventory.FindItem(nameof(SCP_504));
+                        InvItem? tomato = agent.inventory?.FindItem(nameof(SCP_504));
                         Power power = DeterminePower();
                         if (tomato is not null && power > Power.None)
                             TriggerTomatoFromInventory(tomato, target, power, __instance);
                     }
                     else
                     { // check just the toolbar, to allow the player to somehow keep their tomatoes under control
-                        InvSlot? slot = agent.mainGUI?.AllSlots.Find(static s => s.slotType is "Toolbar" && s.item?.invItemName is nameof(SCP_504));
+                        InvSlot? slot = agent.mainGUI?.AllSlots.Find(
+                            static s => s.slotType is "Toolbar" && s.item?.invItemName is nameof(SCP_504));
                         Power power = DeterminePower();
                         if (slot is not null && power > Power.None)
                             TriggerTomatoFromInventory(slot.item, target, DeterminePower(), __instance);
                     }
                 }
-
             }
         }
 
@@ -131,14 +135,15 @@ namespace SecureContainProtect
         public enum Power { None, Twitch, Hurl, Launch, Blast, Triggered }
 
         private static readonly Random rnd = new Random();
+
         public static Power DeterminePower() => rnd.Next(1000) switch
         {
             < 1 => Power.Triggered, //  0.1% - Huge explosion
-            < 5 => Power.Blast,     //  0.4% - Big explosion
-            < 30 => Power.Launch,   //  2.5% - Normal explosion
-            < 100 => Power.Twitch,  //  7.0% - small movement
-            < 400 => Power.None,    // 30.0% - nothing
-            _ => Power.Hurl,        // 60.0% - powerful throw
+            < 25 => Power.Blast,    //  2.4% - Big explosion
+            < 75 => Power.Twitch,   //  5.0% - small movement
+            < 200 => Power.Launch,  // 12.5% - Normal explosion
+            < 500 => Power.None,    // 30.0% - nothing
+            _ => Power.Hurl,        // 50.0% - powerful throw
         };
         private static int GetDamage(Power power) => power switch
         {
@@ -151,7 +156,7 @@ namespace SecureContainProtect
             _ => throw new ArgumentException(nameof(power)),
         };
 
-        public static void ThrowTomato(Item item, Vector2 target, Power power)
+        public static void ThrowTomato(Item item, Vector2 target, Power power, bool canHitThrower)
         {
             item.thrower = item.owner;
             item.beingThrown = true;
@@ -167,6 +172,7 @@ namespace SecureContainProtect
             Movement movement = item.GetComponent<Movement>();
             movement.RotateToPositionOffset(target);
             movement.RotateToPositionOffsetTr(target);
+
             switch (power)
             {
                 // TODO: play different sound clips
@@ -189,10 +195,26 @@ namespace SecureContainProtect
             item.otherDamageMode = true;
             item.invItem.otherDamage = otherDamage;
 
-            Physics2D.IgnoreCollision(item.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(),
-                                      item.thrower.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(), true);
-            Physics2D.IgnoreCollision(item.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(),
-                                      item.thrower.tr.Find("AgentItemCollider").GetComponent<BoxCollider2D>().GetComponent<Collider2D>(), true);
+            if (power > Power.Twitch)
+            {
+                Rigidbody2D rb = movement.GetComponent<Rigidbody2D>();
+                float prevDrag = rb.drag;
+                rb.drag = 0.1f;
+                IEnumerator Enumerator()
+                {
+                    yield return new WaitForSeconds(0.5f);
+                    rb.drag = prevDrag;
+                }
+                movement.StartCoroutine(Enumerator());
+            }
+
+            if (!canHitThrower)
+            {
+                Physics2D.IgnoreCollision(item.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(),
+                                          item.thrower.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(), true);
+                Physics2D.IgnoreCollision(item.GetComponent<CircleCollider2D>().GetComponent<Collider2D>(),
+                                          item.thrower.tr.Find("AgentItemCollider").GetComponent<BoxCollider2D>().GetComponent<Collider2D>(), true);
+            }
         }
         public static void HitTomato(Item __instance)
         {
@@ -205,8 +227,8 @@ namespace SecureContainProtect
             }
             HitTomato(__instance.tr.position, tomato.Power, __instance.thrower);
 
-            if (tomato.Power >= Power.Hurl)
-                __instance.DestroyMe();
+            if (tomato.Power > Power.Twitch)
+                __instance.DestroyMeFromClient();
         }
         public static void HitTomato(Vector2 hit, Power power, Agent thrower)
         {
@@ -215,14 +237,14 @@ namespace SecureContainProtect
 
             if (power >= Power.Launch)
             {
-                Explosion explosion = gc.spawnerMain.SpawnExplosion(thrower, hit, power switch
+                gc.spawnerMain.SpawnExplosion(thrower, hit, power switch
                 {
                     Power.Launch => "Normal",
                     Power.Blast => "Big",
                     Power.Triggered => "Huge",
                     _ => null,
                 });
-                ParticleSystem ps = explosion.particleEffect.ps;
+                ParticleSystem ps = gc.particleEffectsList[gc.particleEffectsList.Count - 1].ps;
                 ParticleSystem.MainModule main = ps.main;
                 main.startColor = new ParticleSystem.MinMaxGradient(new Color32(221, 48, 17, 255));
             }
@@ -250,7 +272,7 @@ namespace SecureContainProtect
 
             Item tomato = gc.spawnerMain.SpawnItemWeapon(item.agent.curPosition, itemPart, null, item.agent);
             item.database.SubtractFromItemCount(item, 1);
-            ThrowTomato(tomato, target, power);
+            ThrowTomato(tomato, target, power, false);
         }
         public static void TriggerTomatoOnGround(Item item, Vector2 target, Power power)
         {
@@ -263,7 +285,7 @@ namespace SecureContainProtect
 
             Item tomato = gc.spawnerMain.SpawnItemWeapon(item.curPosition, itemPart, null, item.owner);
             if (--item.invItem.invItemCount is 0) item.DestroyMe();
-            ThrowTomato(tomato, target, power);
+            ThrowTomato(tomato, target, power, true);
         }
 
     }

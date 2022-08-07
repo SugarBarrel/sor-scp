@@ -16,8 +16,8 @@ namespace SecureContainProtect
         [RLSetup]
         public static void Setup()
         {
-            ScpPlugin.CreateOctoSprite("SCP_096_Head", SpriteScope.Hair, Properties.Resources.SCP_096_Head, 64f, 64f);
-            ScpPlugin.CreateOctoSprite("SCP_096", SpriteScope.Bodies, Properties.Resources.SCP_096_Body, 64f, 64f);
+            ScpPlugin.CreateOctoSprite("SCP_096_Head", SpriteScope.Hair, Properties.Resources.SCP_096_Head, 64f);
+            ScpPlugin.CreateOctoSprite("SCP_096", SpriteScope.Bodies, Properties.Resources.SCP_096_Body, 64f);
 
             SCP_096_VisualEffect.ScrambleFrames = ScpPlugin.ConvertQuadraSprite(Properties.Resources.SCP_096_ScrambleFrame, 64f);
             SCP_096_VisualEffect.ScrambleCrosshair = RogueUtilities.ConvertToSprite(Properties.Resources.SCP_096_ScrambleCrosshair);

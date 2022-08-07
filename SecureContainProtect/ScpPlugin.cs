@@ -1,5 +1,4 @@
-﻿using System.Collections.Generic;
-using BepInEx;
+﻿using BepInEx;
 using BepInEx.Logging;
 using RogueLibsCore;
 using UnityEngine;
@@ -62,6 +61,7 @@ namespace SecureContainProtect
 
         public void Update()
         {
+#if DEBUG
             if (Input.GetKeyDown(KeyCode.F6))
             {
                 GameController gc = GameController.gameController;
@@ -80,6 +80,7 @@ namespace SecureContainProtect
                 gc.playerAgent.interactionHelper.interactionObject
                     = gc.agentList.Find(static a => a.GetHook<SCP_096>() is not null).gameObject;
             }
+#endif
         }
 
 

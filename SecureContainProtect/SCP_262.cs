@@ -21,7 +21,7 @@ namespace SecureContainProtect
                      })
                      .WithDescription(new CustomNameInfo
                      {
-                         English = "A military coat that can manifest multiple additional arms from the darker inner lining.",
+                         English = "A military coat that can manifest multiple additional arms from the dark inner lining.",
                      })
                      .WithSprite(Properties.Resources.SCP_262, new Rect(0f, 0f, 64f, 64f))
                      .WithUnlock(new ItemUnlock(false)
