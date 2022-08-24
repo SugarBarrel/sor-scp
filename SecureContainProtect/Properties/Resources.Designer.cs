@@ -193,6 +193,16 @@ namespace SecureContainProtect.Properties {
         /// <summary>
         ///   Looks up a localized resource of type System.Byte[].
         /// </summary>
+        internal static byte[] SCP_3808 {
+            get {
+                object obj = ResourceManager.GetObject("SCP_3808", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
         internal static byte[] SCP_426 {
             get {
                 object obj = ResourceManager.GetObject("SCP_426", resourceCulture);
@@ -206,6 +216,26 @@ namespace SecureContainProtect.Properties {
         internal static byte[] SCP_485 {
             get {
                 object obj = ResourceManager.GetObject("SCP_485", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] SCP_485_Click_1 {
+            get {
+                object obj = ResourceManager.GetObject("SCP_485_Click_1", resourceCulture);
+                return ((byte[])(obj));
+            }
+        }
+        
+        /// <summary>
+        ///   Looks up a localized resource of type System.Byte[].
+        /// </summary>
+        internal static byte[] SCP_485_Click_2 {
+            get {
+                object obj = ResourceManager.GetObject("SCP_485_Click_2", resourceCulture);
                 return ((byte[])(obj));
             }
         }
